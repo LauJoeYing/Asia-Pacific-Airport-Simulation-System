@@ -6,7 +6,7 @@ package asia.pacific.airport.simulation.system;
 
 /**
  *
- * @author joeyi
+ * @author joeying
  */
 public class AsiaPacificAirportSimulationSystem {
 
@@ -14,7 +14,7 @@ public class AsiaPacificAirportSimulationSystem {
      * @param args the command line arguments
      */
     public static void main(String[] args) {
-        // TODO code application logic here
+        
     }
     
 }
