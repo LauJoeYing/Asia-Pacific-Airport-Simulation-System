@@ -41,7 +41,7 @@ public class Airplane implements Runnable, Logging {
         }
         log("Landed successfully.");
 
-        atc.handlePostActivity();
+        atc.handlePostTrafficActivity();
     }
 
     private void dock() {
@@ -52,6 +52,7 @@ public class Airplane implements Runnable, Logging {
             throw new RuntimeException(e);
         }
         log("Docked successfully.");
+
     }
 
     private void requestToTakeOff() {
@@ -71,9 +72,9 @@ public class Airplane implements Runnable, Logging {
         } catch (InterruptedException e) {
             throw new RuntimeException(e);
         }
-        log("Taken off successfully.");
+        log("Took off successfully.");
 
-        atc.handlePostActivity();
+        atc.handlePostTrafficActivity();
     }
 
     public boolean isEmergency() {

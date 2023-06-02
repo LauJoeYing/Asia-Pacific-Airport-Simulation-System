@@ -4,7 +4,7 @@ import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicReferenceArray;
 
 public class GateHandler {
-    private static final int GATE_CAPACITY = 3;
+    public static final int GATE_CAPACITY = 3;
     private final AtomicReferenceArray<Gate> gates;
     final Semaphore gateSemaphore;
 
@@ -14,6 +14,10 @@ public class GateHandler {
         for (int i = 0; i < GATE_CAPACITY; i++) {
             gates.set(i, new Gate(i + 1));
         }
+    }
+
+    public AtomicReferenceArray<Gate> getGates() {
+        return gates;
     }
 
     public boolean gateIsFull() {

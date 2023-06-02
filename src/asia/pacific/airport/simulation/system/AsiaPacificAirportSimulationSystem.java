@@ -6,10 +6,11 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 public class AsiaPacificAirportSimulationSystem {
-    public static void main(String[] args) {
-        final int TOTAL_PLANES = 6;
+    final static int TOTAL_PLANES = 6;
 
+    public static void main(String[] args) {
         ATC atc = new ATC();
+
         ExecutorService executorService = Executors.newFixedThreadPool(TOTAL_PLANES);
         for (int i = 0; i < TOTAL_PLANES; i++) {
             boolean isEmergency = i == TOTAL_PLANES - 1;
