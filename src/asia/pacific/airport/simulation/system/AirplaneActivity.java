@@ -4,12 +4,12 @@ import static java.lang.System.currentTimeMillis;
 
 public class AirplaneActivity implements Comparable<AirplaneActivity> {
     private final Airplane airplane;
-    private final String activity;
+    private final AirplaneAction action;
     private final Long requestTime;
 
-    public AirplaneActivity(Airplane airplane, String activity) {
+    public AirplaneActivity(Airplane airplane, AirplaneAction action) {
         this.airplane = airplane;
-        this.activity = activity;
+        this.action = action;
         this.requestTime = currentTimeMillis();
     }
 
@@ -17,8 +17,8 @@ public class AirplaneActivity implements Comparable<AirplaneActivity> {
         return airplane;
     }
 
-    public String getActivity() {
-        return activity;
+    public AirplaneAction getAction() {
+        return action;
     }
 
     @Override
@@ -26,7 +26,7 @@ public class AirplaneActivity implements Comparable<AirplaneActivity> {
         return String.format(
                 "%s: %s",
                 airplane.getName(),
-                activity.equals("LAND") ?
+                action.equals(AirplaneAction.LAND) ?
                         "landing" :
                         "take off"
         );
@@ -35,7 +35,7 @@ public class AirplaneActivity implements Comparable<AirplaneActivity> {
     @Override
     public int compareTo(AirplaneActivity other) {
         if (airplane.isEmergency()) {
-            if (activity.equals("TAKE OFF")) {
+            if (action.equals(AirplaneAction.TAKE_OFF)) {
                 return -2;
             } else {
                 return -1;
