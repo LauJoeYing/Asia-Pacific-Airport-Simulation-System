@@ -1,6 +1,6 @@
 package asia.pacific.airport.simulation.system;
 
 public enum AirplaneAction {
-    LAND,
+    LANDING,
     TAKE_OFF
 }

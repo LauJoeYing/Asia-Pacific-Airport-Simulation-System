@@ -3,38 +3,111 @@ package asia.pacific.airport.simulation.system;
 import static java.lang.System.currentTimeMillis;
 
 public class AirplaneActivity implements Comparable<AirplaneActivity> {
-    private final Airplane airplane;
     private final AirplaneAction action;
-    private final Long requestTime;
+    private final Long actionRequestTime;
+    private boolean isEmergency;
+    private final Object actionApprovalLock = new Object();
+    private boolean isActionApprovalGranted;
+    private final Object actionCompletionLock = new Object();
+    private boolean isActionCompleted;
 
-    public AirplaneActivity(Airplane airplane, AirplaneAction action) {
-        this.airplane = airplane;
+    public AirplaneActivity(AirplaneAction action) {
         this.action = action;
-        this.requestTime = currentTimeMillis();
+        isEmergency = false;
+        isActionApprovalGranted = false;
+        isActionCompleted = false;
+        this.actionRequestTime = currentTimeMillis();
     }
 
-    public Airplane getAirplane() {
-        return airplane;
+    public AirplaneActivity(AirplaneAction action, boolean isEmergency) {
+        this.action = action;
+        this.isEmergency = isEmergency;
+        isActionApprovalGranted = false;
+        isActionCompleted = false;
+        this.actionRequestTime = currentTimeMillis();
     }
 
     public AirplaneAction getAction() {
         return action;
     }
 
-    @Override
-    public String toString() {
-        return String.format(
-                "%s: %s",
-                airplane.getName(),
-                action.equals(AirplaneAction.LAND) ?
-                        "landing" :
-                        "take off"
-        );
+    public boolean isEmergency() {
+        return isEmergency;
+    }
+
+    public void setEmergency(boolean isEmergency) {
+        this.isEmergency = isEmergency;
+    }
+
+    public boolean isActionApprovalGranted() {
+        synchronized (actionApprovalLock) {
+            return isActionApprovalGranted;
+        }
+    }
+
+    public void setActionApprovalGranted(boolean isActionRequestApproved) {
+        synchronized (actionApprovalLock) {
+            this.isActionApprovalGranted = isActionRequestApproved;
+            actionApprovalLock.notifyAll();
+        }
+    }
+
+    public void waitForActionRequestApproval() {
+        synchronized (actionApprovalLock) {
+            while (!isActionApprovalGranted) {
+                try {
+                    actionApprovalLock.wait();
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+            }
+        }
+    }
+
+    public Object getActionApprovalLock() {
+        return actionApprovalLock;
+    }
+
+    public boolean isActionCompleted() {
+        synchronized (actionCompletionLock) {
+            return isActionCompleted;
+        }
+    }
+
+    public void setActionCompleted(boolean isActionCompleted) {
+        synchronized (actionCompletionLock) {
+            this.isActionCompleted = isActionCompleted;
+            actionCompletionLock.notifyAll();
+        }
+    }
+
+    public void waitForActionCompletion() {
+        synchronized (actionCompletionLock) {
+            while (!isActionCompleted) {
+                try {
+                    actionCompletionLock.wait();
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+            }
+        }
+    }
+
+    public Object getActionCompletionLock() {
+        return actionCompletionLock;
+    }
+
+    public Long getActionRequestTime() {
+        return actionRequestTime;
+    }
+
+    public String getName() {
+        return action == AirplaneAction.LANDING ? "Landing" : "Take Off";
     }
 
     @Override
     public int compareTo(AirplaneActivity other) {
-        if (airplane.isEmergency()) {
+        if (isEmergency) {
             if (action.equals(AirplaneAction.TAKE_OFF)) {
                 return -2;
             } else {
@@ -42,6 +115,6 @@ public class AirplaneActivity implements Comparable<AirplaneActivity> {
             }
         }
 
-        return Long.compare(this.requestTime, other.requestTime);
+        return Long.compare(this.actionRequestTime, other.actionRequestTime);
     }
 }

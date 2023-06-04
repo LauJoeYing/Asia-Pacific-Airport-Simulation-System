@@ -14,7 +14,7 @@ public class AsiaPacificAirportSimulationSystem {
         ExecutorService executorService = Executors.newFixedThreadPool(TOTAL_PLANES);
         for (int i = 0; i < TOTAL_PLANES; i++) {
             boolean isEmergency = i == TOTAL_PLANES - 1;
-            Airplane airplane = new Airplane(atc, isEmergency);
+            Airplane airplane = new Airplane(atc);
             executorService.execute(airplane);
             try {
                 Thread.sleep(new Random().nextInt(3000));

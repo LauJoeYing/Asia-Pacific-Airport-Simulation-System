@@ -1,38 +1,67 @@
 package asia.pacific.airport.simulation.system;
 
-public class Airplane implements Runnable, Logging {
-    private static int planeCount = 0;
+public class Airplane implements Runnable, Logging, Comparable<Airplane> {
+    private static int airplaneCount = 0;
     private final int id;
     private final ATC atc;
-    private boolean isEmergency;
+    private AirplaneActivity currentActivity;
 
-    public Airplane(ATC atc, boolean isEmergency) {
-        planeCount++;
-        id = planeCount;
+    public Airplane(ATC atc) {
+        airplaneCount++;
+        id = airplaneCount;
         this.atc = atc;
-        this.isEmergency = isEmergency;
     }
 
     public String getName() {
         return String.format("Airplane %d", this.id);
     }
 
+    public AirplaneActivity getCurrentActivity() {
+        return currentActivity;
+    }
+
+    public void setActivityEmergency(boolean isEmergency) {
+        currentActivity.setEmergency(isEmergency);
+    }
+
+    public void setActivityApprovalGranted(boolean isApprovalGranted) {
+        synchronized (currentActivity.getActionApprovalLock()) {
+            currentActivity.setActionApprovalGranted(isApprovalGranted);
+            currentActivity.getActionApprovalLock().notifyAll();
+        }
+    }
+
+    public void setActivityCompletion(boolean isCompleted) {
+        synchronized (currentActivity.getActionCompletionLock()) {
+            currentActivity.setActionCompleted(isCompleted);
+            currentActivity.getActionCompletionLock().notifyAll();
+        }
+    }
+
+    public String getCurrentActivityName() {
+        return String.format(
+                "%s (%s)",
+                getName(),
+                currentActivity.getName()
+        );
+    }
+
     private void requestToLand() {
+        currentActivity = new AirplaneActivity(AirplaneAction.LANDING, airplaneCount == AsiaPacificAirportSimulationSystem.TOTAL_PLANES);
         String requestToLandLoggingMessage = String.format(
                 "Request for %slanding.",
-                getEmergencyStatus()
+                currentActivity.isEmergency() ? "emergency " : ""
         );
         log(requestToLandLoggingMessage);
 
         atc.handleLandingRequest(this);
     }
 
-    public void handleLandingApproval() {
-        log("Landing approval received.");
-        land();
-    }
-
     private void land() {
+        currentActivity.waitForActionRequestApproval();
+
+        atc.handlePreTrafficActivity(this);
+        log("Landing approval received.");
         log("Landing on runway.");
         try {
             Thread.sleep(1000);
@@ -41,7 +70,8 @@ public class Airplane implements Runnable, Logging {
         }
         log("Landed successfully.");
 
-        atc.handlePostTrafficActivity();
+        setActivityCompletion(true);
+        atc.handlePostTrafficActivity(this);
     }
 
     private void dock() {
@@ -56,16 +86,17 @@ public class Airplane implements Runnable, Logging {
     }
 
     private void requestToTakeOff() {
+        currentActivity = new AirplaneActivity(AirplaneAction.TAKE_OFF);
         log("Request for take off.");
         atc.handleTakeOffRequest(this);
     }
 
-    public void handleTakeOffApproval() {
-        log("Take off approval received.");
-        takeOff();
-    }
-
     private void takeOff() {
+        currentActivity.waitForActionRequestApproval();
+
+        atc.handlePreTrafficActivity(this);
+        log("Take off approval received.");
+
         log("Taking off.");
         try {
             Thread.sleep(1000);
@@ -74,21 +105,8 @@ public class Airplane implements Runnable, Logging {
         }
         log("Took off successfully.");
 
-        atc.handlePostTrafficActivity();
-    }
-
-    public boolean isEmergency() {
-        return isEmergency;
-    }
-
-    public void setEmergency(boolean isEmergency) {
-        this.isEmergency = isEmergency;
-    }
-
-    public String getEmergencyStatus() {
-        return isEmergency ?
-                "emergency " :
-                "";
+        setActivityCompletion(true);
+        atc.handlePostTrafficActivity(this);
     }
 
     @Override
@@ -104,7 +122,14 @@ public class Airplane implements Runnable, Logging {
     @Override
     public void run() {
         requestToLand();
+        land();
         dock();
         requestToTakeOff();
+        takeOff();
+    }
+
+    @Override
+    public int compareTo(Airplane other) {
+        return this.currentActivity.compareTo(other.currentActivity);
     }
 }

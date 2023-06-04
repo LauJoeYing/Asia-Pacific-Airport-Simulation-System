@@ -6,6 +6,7 @@ import java.util.concurrent.atomic.AtomicLongArray;
 import java.util.concurrent.atomic.AtomicReferenceArray;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.stream.Collectors;
 
 import static asia.pacific.airport.simulation.system.AsiaPacificAirportSimulationSystem.TOTAL_PLANES;
 
@@ -13,7 +14,7 @@ public class ATC implements Logging {
     private final static String ATC = "ATC";
     private final Lock runwayLock;
     private final GateHandler gateHandler;
-    private final PriorityBlockingQueue<AirplaneActivity> airplaneActivityQueue;
+    private final PriorityBlockingQueue<Airplane> pendingAirplaneQueue;
     private AtomicInteger totalAirplaneCycleCount;
     private AtomicInteger totalPassengerCycleCount;
     private AtomicLongArray waitingTimeList;
@@ -21,24 +22,25 @@ public class ATC implements Logging {
     public ATC() {
         runwayLock = new ReentrantLock(true);
         gateHandler = new GateHandler();
-        airplaneActivityQueue = new PriorityBlockingQueue<>();
+        pendingAirplaneQueue = new PriorityBlockingQueue<>();
         totalAirplaneCycleCount = new AtomicInteger(0);
         totalPassengerCycleCount = new AtomicInteger(0);
         waitingTimeList = new AtomicLongArray(0);
     }
 
-    private void enqueueActivity(Airplane airplane, AirplaneAction action) {
-        airplaneActivityQueue.offer(new AirplaneActivity(airplane, action));
+    private void enqueueActivity(Airplane airplane) {
+        AirplaneActivity airplaneActivity = airplane.getCurrentActivity();
+        AirplaneAction airplaneAction = airplaneActivity.getAction();
 
-        logCurrentActivityQueues();
+        pendingAirplaneQueue.offer(airplane);
+
+        logPendingAirplaneQueue();
 
         String enqueueActivityLoggingMessage = String.format(
                 "%s (%s) %s activity queue.",
                 airplane.getName(),
-                action.equals(AirplaneAction.LAND) ?
-                        "landing" :
-                        "take off",
-                airplane.isEmergency() && airplaneActivityQueue.size() > 1 ?
+                airplaneActivity.getName(),
+                airplaneActivity.isEmergency() && pendingAirplaneQueue.size() > 1 ?
                         "cuts queue and has been offered first place in the" :
                         "has been added to the"
         );
@@ -46,52 +48,55 @@ public class ATC implements Logging {
     }
 
     private void dequeueActivity() {
+        Airplane nextAirplane;
         AirplaneActivity nextAirplaneActivity;
-        Airplane airplaneToRun;
-        AirplaneAction action;
+        AirplaneAction nextAirplaneAction;
 
         try {
-            nextAirplaneActivity = airplaneActivityQueue.take();
-            airplaneToRun = nextAirplaneActivity.getAirplane();
-            action = nextAirplaneActivity.getAction();
+            nextAirplane = pendingAirplaneQueue.take();
+            nextAirplaneActivity = nextAirplane.getCurrentActivity();
+            nextAirplaneAction = nextAirplaneActivity.getAction();
 
         } catch (InterruptedException e) {
             throw new RuntimeException(e);
         }
 
-        logCurrentActivityQueues();
+        logPendingAirplaneQueue();
 
         String dequeueLandingLoggingMessage = String.format(
                 "%s is ready to be %s.",
-                airplaneToRun.getName(),
-                action.equals(AirplaneAction.LAND) ?
+                nextAirplane.getName(),
+                nextAirplaneAction.equals(AirplaneAction.LANDING) ?
                         "landed" :
                         "taken off"
         );
 
         log(dequeueLandingLoggingMessage);
 
-        runwayLock.lock();
-        if (action.equals(AirplaneAction.LAND)) {
-            sendLandingApproval(airplaneToRun);
+        if (nextAirplaneAction.equals(AirplaneAction.LANDING)) {
+            sendLandingApproval(nextAirplane);
         } else {
-            sendTakeOffApproval(airplaneToRun);
+            sendTakeOffApproval(nextAirplane);
         }
     }
 
     private boolean pendingActivityPresent() {
-        return airplaneActivityQueue.size() > 0;
+        return pendingAirplaneQueue.size() > 0;
     }
 
     private boolean nextActivityIsLanding() {
-        return airplaneActivityQueue.size() > 0 && airplaneActivityQueue.peek().getAction().equals(AirplaneAction.LAND);
+        return pendingAirplaneQueue.size() > 0 &&
+                pendingAirplaneQueue.peek()
+                        .getCurrentActivity()
+                        .getAction()
+                        .equals(AirplaneAction.LANDING);
     }
 
     public void handleLandingRequest(Airplane airplane) {
         String landingRequestLoggingMessage = String.format(
                 "%s %slanding request received. Checking for gate availability.",
                 airplane.getName(),
-                airplane.getEmergencyStatus()
+                airplane.getCurrentActivity().isEmergency() ? "emergency " : ""
         );
         log(landingRequestLoggingMessage);
 
@@ -106,23 +111,24 @@ public class ATC implements Logging {
             log("All gates are occupied at the moment, please wait in a circle queue.");
         }
 
-        enqueueActivity(airplane, AirplaneAction.LAND);
+        enqueueActivity(airplane);
     }
 
     private void sendLandingApproval(Airplane airplane) {
         if (runwayLock.tryLock()) {
             int gateId = gateHandler.acquireGate(airplane);
             String landingApprovalLoggingMessage = String.format(
-                    "%s landing approval granted. Please proceed to gate %d.",
+                    "%s landing approval granted. Please proceed to Gate %d.",
                     airplane.getName(),
                     gateId
             );
             log(landingApprovalLoggingMessage);
-            log("Runway is now locked for landing.");
-            airplane.handleLandingApproval();
+
+            airplane.setActivityApprovalGranted(true);
+            runwayLock.unlock();
         } else {
             log("Runway is occupied at the moment, please wait in a circle queue.");
-            enqueueActivity(airplane, AirplaneAction.LAND);
+            enqueueActivity(airplane);
         }
     }
 
@@ -133,11 +139,11 @@ public class ATC implements Logging {
         );
         log(takeOffRequestLoggingMessage);
 
-        if (!gateHandler.gateIsFull() && nextActivityIsLanding()) {
-            airplane.setEmergency(true);
+        if (gateHandler.gateIsFull() && nextActivityIsLanding()) {
+            airplane.setActivityEmergency(true);
         } else if (pendingActivityPresent()) {
             log("Pending activity is present, please wait at the gate.");
-            enqueueActivity(airplane, AirplaneAction.TAKE_OFF);
+            enqueueActivity(airplane);
             return;
         }
 
@@ -152,28 +158,41 @@ public class ATC implements Logging {
             );
             log(takeOffApprovalLoggingMessage);
             gateHandler.releaseGate(airplane);
-            log("Runway is now locked for take off.");
-            airplane.handleTakeOffApproval();
+
+            airplane.setActivityApprovalGranted(true);
+            runwayLock.unlock();
         } else {
             log("Runway is occupied at the moment, please wait at the gate.");
-            enqueueActivity(airplane, AirplaneAction.TAKE_OFF);
+            enqueueActivity(airplane);
         }
     }
 
-    public void handlePostTrafficActivity() {
+    public void handlePreTrafficActivity(Airplane airplane) {
+        runwayLock.lock();
+        String preTrafficActivityLoggingMessage = String.format(
+                "Runway is now locked for %s.",
+                airplane.getCurrentActivityName()
+        );
+        log(preTrafficActivityLoggingMessage);
+    }
+
+    public void handlePostTrafficActivity(Airplane airplane) {
+        airplane.getCurrentActivity().waitForActionCompletion();
         runwayLock.unlock();
         log("Runway is now available.");
-        if (airplaneActivityQueue.size() > 0) {
+        if (pendingAirplaneQueue.size() > 0) {
             dequeueActivity();
         }
     }
 
-    private void logCurrentActivityQueues() {
-        String activityQueueLoggingMessage = String.format(
-                "Airplane Activity queue: [%s]",
-                airplaneActivityQueue
+    private void logPendingAirplaneQueue() {
+        String pendingAirplaneQueueLoggingMessage = String.format(
+                "Airplane Queue: [%s]",
+                pendingAirplaneQueue.stream()
+                        .map(Airplane::getCurrentActivityName)
+                        .collect(Collectors.joining(", "))
         );
-        log(activityQueueLoggingMessage);
+        log(pendingAirplaneQueueLoggingMessage);
     }
 
     public void passengerIncrement() {

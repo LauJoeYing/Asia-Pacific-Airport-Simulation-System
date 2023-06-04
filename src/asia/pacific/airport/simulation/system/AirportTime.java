@@ -7,7 +7,7 @@ import java.time.format.DateTimeFormatter;
 public class AirportTime {
     public static String getCurrentTimestamp(){
         String timestamp = ZonedDateTime.now(ZoneId.of("Asia/Shanghai"))
-                .format(DateTimeFormatter.ofPattern("d-MM-y kk:mm:ss"));
+                .format(DateTimeFormatter.ofPattern("yyyy-MM-dd kk:mm:ss"));
 
         return String.format("[ %s ]", timestamp);
     }
