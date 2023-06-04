@@ -6,16 +6,18 @@ public class AirplaneActivity implements Comparable<AirplaneActivity> {
     private final AirplaneAction action;
     private final Long actionRequestTime;
     private boolean isEmergency;
-    private final Object actionApprovalLock = new Object();
+    private final Object actionApprovalLock;
     private boolean isActionApprovalGranted;
-    private final Object actionCompletionLock = new Object();
+    private final Object actionCompletionLock;
     private boolean isActionCompleted;
 
     public AirplaneActivity(AirplaneAction action) {
         this.action = action;
         isEmergency = false;
         isActionApprovalGranted = false;
+        actionApprovalLock = new Object();
         isActionCompleted = false;
+        actionCompletionLock = new Object();
         this.actionRequestTime = currentTimeMillis();
     }
 
@@ -23,7 +25,9 @@ public class AirplaneActivity implements Comparable<AirplaneActivity> {
         this.action = action;
         this.isEmergency = isEmergency;
         isActionApprovalGranted = false;
+        actionApprovalLock = new Object();
         isActionCompleted = false;
+        actionCompletionLock = new Object();
         this.actionRequestTime = currentTimeMillis();
     }
 

@@ -1,5 +1,7 @@
 package asia.pacific.airport.simulation.system;
 
+import java.util.PriorityQueue;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.PriorityBlockingQueue;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLongArray;
@@ -9,15 +11,18 @@ import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
 
 import static asia.pacific.airport.simulation.system.AsiaPacificAirportSimulationSystem.TOTAL_PLANES;
+import static java.util.Objects.isNull;
 
 public class ATC implements Logging {
     private final static String ATC = "ATC";
     private final Lock runwayLock;
     private final GateHandler gateHandler;
     private final PriorityBlockingQueue<Airplane> pendingAirplaneQueue;
-    private AtomicInteger totalAirplaneCycleCount;
-    private AtomicInteger totalPassengerCycleCount;
-    private AtomicLongArray waitingTimeList;
+    private boolean pendingAirplaneQueueContainsTakeOff;
+    private final AtomicInteger totalAirplaneCycleCount;
+    private final AtomicInteger totalPassengerCycleCount;
+    private final CopyOnWriteArrayList<Long> waitingTimeList;
+
 
     public ATC() {
         runwayLock = new ReentrantLock(true);
@@ -25,7 +30,19 @@ public class ATC implements Logging {
         pendingAirplaneQueue = new PriorityBlockingQueue<>();
         totalAirplaneCycleCount = new AtomicInteger(0);
         totalPassengerCycleCount = new AtomicInteger(0);
-        waitingTimeList = new AtomicLongArray(0);
+        waitingTimeList = new CopyOnWriteArrayList<>();
+    }
+
+    public GateHandler getGateHandler() {
+        return gateHandler;
+    }
+
+    public int getTotalAirplaneCycleCount() {
+        return totalAirplaneCycleCount.get();
+    }
+
+    public int getTotalPassengerCycleCount() {
+        return totalPassengerCycleCount.get();
     }
 
     private void enqueueActivity(Airplane airplane) {
@@ -33,6 +50,10 @@ public class ATC implements Logging {
         AirplaneAction airplaneAction = airplaneActivity.getAction();
 
         pendingAirplaneQueue.offer(airplane);
+
+        if(airplaneAction.equals(AirplaneAction.TAKE_OFF)) {
+            pendingAirplaneQueueContainsTakeOff = true;
+        }
 
         logPendingAirplaneQueue();
 
@@ -48,6 +69,16 @@ public class ATC implements Logging {
     }
 
     private void dequeueActivity() {
+        if(nextActivityIsLanding() && gateHandler.gateIsFull()) {
+            log("All gates are occupied at the moment, please wait in a circle queue.");
+            if (pendingAirplaneQueueContainsTakeOff) {
+                removeAirplaneUntilNextTakeOffAndReinsert();
+                logPendingAirplaneQueue();
+                dequeueActivity();
+            }
+            return;
+        }
+
         Airplane nextAirplane;
         AirplaneActivity nextAirplaneActivity;
         AirplaneAction nextAirplaneAction;
@@ -80,6 +111,32 @@ public class ATC implements Logging {
         }
     }
 
+    private void removeAirplaneUntilNextTakeOffAndReinsert() {
+        PriorityQueue<Airplane> tempAirplaneQueue = new PriorityQueue<>();
+        Airplane airplane = null;
+
+        while (!pendingAirplaneQueue.isEmpty()) {
+            airplane = pendingAirplaneQueue.peek();
+            if (airplane.getCurrentActivity().getAction().equals(AirplaneAction.TAKE_OFF)) {
+                break;
+            }
+            tempAirplaneQueue.offer(pendingAirplaneQueue.poll());
+        }
+
+        while (!tempAirplaneQueue.isEmpty()) {
+            pendingAirplaneQueue.offer(tempAirplaneQueue.poll());
+        }
+
+        if (!isNull(airplane)) {
+            String nextTakeOffCutsQueueLoggingMessage = String.format(
+                    "%s (%s) cuts queue and has been offered first place in the activity queue.",
+                    airplane.getName(),
+                    airplane.getCurrentActivity().getName()
+            );
+            log(nextTakeOffCutsQueueLoggingMessage);
+        }
+    }
+
     private boolean pendingActivityPresent() {
         return pendingAirplaneQueue.size() > 0;
     }
@@ -90,6 +147,14 @@ public class ATC implements Logging {
                         .getCurrentActivity()
                         .getAction()
                         .equals(AirplaneAction.LANDING);
+    }
+
+    public boolean nextActivityIsTakeOff() {
+        return pendingAirplaneQueue.size() > 0 &&
+                pendingAirplaneQueue.peek()
+                        .getCurrentActivity()
+                        .getAction()
+                        .equals(AirplaneAction.TAKE_OFF);
     }
 
     public void handleLandingRequest(Airplane airplane) {
@@ -117,13 +182,13 @@ public class ATC implements Logging {
     private void sendLandingApproval(Airplane airplane) {
         if (runwayLock.tryLock()) {
             int gateId = gateHandler.acquireGate(airplane);
+
             String landingApprovalLoggingMessage = String.format(
                     "%s landing approval granted. Please proceed to Gate %d.",
                     airplane.getName(),
                     gateId
             );
             log(landingApprovalLoggingMessage);
-
             airplane.setActivityApprovalGranted(true);
             runwayLock.unlock();
         } else {
@@ -208,55 +273,50 @@ public class ATC implements Logging {
     }
 
     public void addWaitingTime(long waitingTime){
-        int index = waitingTimeList.length();
-        waitingTimeList.set(index, waitingTime);
+        waitingTimeList.add(waitingTime);
     }
 
     private void printWaitingTimeStatistics(){
         long min = Long.MAX_VALUE;
         long max = Long.MIN_VALUE;
         long sum = 0;
-        for (int i = 0; i < waitingTimeList.length(); i++) {
-            long waitingTime = waitingTimeList.get(i);
-            if (waitingTime < min){
-                min = waitingTime;
-            }
-            if (waitingTime > max){
-                max = waitingTime;
-            }
-            sum += waitingTime;
+
+        for (Long number : waitingTimeList) {
+            min = Math.min(min, number);
+            max = Math.max(max, number);
+            sum += number;
         }
+
+        double average = (double) sum / waitingTimeList.size();
 
         System.out.printf("Minimum waiting time\t\t: %.3fs\n", (double) min);
         System.out.printf("Maximum waiting time\t\t: %.3fs\n", (double) max);
-        System.out.printf("Average waiting time\t\t: %.3fs\n", (double) sum / waitingTimeList.length());
-        System.out.printf("Total waiting time\t\t: %.3fs\n", (double) sum);
+        System.out.printf("Average waiting time\t\t: %.3fs\n", average);
+        System.out.printf("Total waiting time\t\t\t: %.3fs\n", (double) sum);
     }
 
     private void sanityCheck(){
-        System.out.println("---------------------------");
-        System.out.println("\tGATE STATUS");
-        System.out.println("---------------------------");
+        System.out.println("\n---------------------------------------------------------------------------------");
+        System.out.println("                                 GATE STATUS");
+        System.out.println("---------------------------------------------------------------------------------");
         AtomicReferenceArray<Gate> gates = gateHandler.getGates();
         for (int i = 0; i < gates.length(); i++) {
             Gate gate = gates.get(i);
-            System.out.printf("%s is %s.", gate.getName(), gate.isOccupied() ? "occupied." : "empty.");
+            System.out.printf("%s: %s.\n", gate.getName(), gate.isOccupied() ? "Occupied" : "Empty");
         }
     }
 
     private void statistics(){
         System.out.println();
-        System.out.println("---------------------------");
-        System.out.println("\tSTATISTICS");
-        System.out.println("---------------------------");
+        System.out.println("---------------------------------------------------------------------------------");
+        System.out.println("                                   STATISTICS");
+        System.out.println("---------------------------------------------------------------------------------");
 
         printWaitingTimeStatistics();
 
         System.out.printf("Number of planes served\t\t: %d%n", totalAirplaneCycleCount.get());
         System.out.printf("Number of passengers served\t: %d%n", totalPassengerCycleCount.get());
     }
-
-
 
     @Override
     public void log(String loggingMessage) {

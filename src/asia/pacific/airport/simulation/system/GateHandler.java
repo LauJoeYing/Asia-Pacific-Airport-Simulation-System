@@ -21,7 +21,7 @@ public class GateHandler {
     }
 
     public boolean gateIsFull() {
-        return gateSemaphore.availablePermits() == GATE_CAPACITY;
+        return gateSemaphore.availablePermits() == 0;
     }
 
     public boolean gateIsSufficient() {

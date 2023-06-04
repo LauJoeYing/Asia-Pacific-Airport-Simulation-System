@@ -9,12 +9,19 @@ public class AsiaPacificAirportSimulationSystem {
     final static int TOTAL_PLANES = 6;
 
     public static void main(String[] args) {
-        ATC atc = new ATC();
+        long startTime = System.currentTimeMillis();
 
-        ExecutorService executorService = Executors.newFixedThreadPool(TOTAL_PLANES);
+        ATC atc = new ATC();
+        FuelDepot fuelDepot = new FuelDepot();
+        RefuelTruck refuelTruck = new RefuelTruck(atc, fuelDepot);
+
+        ExecutorService executorService = Executors.newFixedThreadPool(TOTAL_PLANES + 1);
+
+        executorService.execute(refuelTruck);
+
         for (int i = 0; i < TOTAL_PLANES; i++) {
             boolean isEmergency = i == TOTAL_PLANES - 1;
-            Airplane airplane = new Airplane(atc);
+            Airplane airplane = new Airplane(atc, refuelTruck);
             executorService.execute(airplane);
             try {
                 Thread.sleep(new Random().nextInt(3000));
@@ -28,9 +35,12 @@ public class AsiaPacificAirportSimulationSystem {
         try {
             boolean terminated = executorService.awaitTermination(Long.MAX_VALUE, TimeUnit.NANOSECONDS);
             if (terminated) {
-                System.out.println("All tasks completed. ServiceExecutor shut down.");
+                long endTime = System.currentTimeMillis();
+                long operatingTime = (endTime - startTime) / 1000 ;
+                System.out.println("\nAll tasks completed. Asia Pacific Airport shuts down.");
+                System.out.println("Total operating time: " + operatingTime + " seconds");
             } else {
-                System.out.println("Timeout occurred while waiting for tasks to complete.");
+                System.out.println("\nTimeout occurred while waiting for tasks to complete.");
             }
         } catch (InterruptedException e) {
             throw new RuntimeException(e);
